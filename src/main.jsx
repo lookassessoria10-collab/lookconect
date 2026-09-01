@@ -306,6 +306,43 @@ function buildMetricTotals(rows) {
   return { active, pending, followers, reach, topClient };
 }
 
+const defaultSyncState = {
+  synced: false,
+  imported: 0,
+  upcoming: 0,
+  lastSync: "Não sincronizado",
+  syncing: false,
+  source: "ClickUp"
+};
+
+function getClientFirstName(clientName = "cliente") {
+  return clientName.split(" ")[0] || clientName;
+}
+
+function statusFromSupabase(value) {
+  const labels = {
+    active: "Ativo",
+    inactive: "Antigo",
+    archived: "Antigo"
+  };
+
+  return labels[value] ?? value ?? "Ativo";
+}
+
+function buildClientMetricCards(client) {
+  const metricClient = client?.metricClient ?? resolveMetricClientName(client?.client ?? "");
+  const row = metricClient ? socialMetricRows.find((item) => item.client === metricClient) : null;
+
+  if (!row) return clientMetrics;
+
+  return [
+    { label: "Seguidores", value: formatMetric(row.followers), hint: row.lastMonth ? `último mês: ${row.lastMonth.toLowerCase()}` : "sem mês preenchido", icon: Users, target: "metricas" },
+    { label: "Alcance", value: formatMetric(row.reach), hint: "alcance do perfil", icon: Eye, target: "metricas" },
+    { label: "Visualizações", value: formatMetric(row.views), hint: "conteúdo visualizado", icon: BarChart3, target: "metricas" },
+    { label: "Interações", value: formatMetric(row.interactions), hint: "ações no perfil", icon: MessageSquareText, target: "metricas" }
+  ];
+}
+
 function ProgressRing({ value = 68 }) {
   return (
     <div className="ring" style={{ "--progress": `${value * 3.6}deg` }}>
@@ -317,7 +354,8 @@ function ProgressRing({ value = 68 }) {
   );
 }
 
-function ClientHeader({ onMenu, onNotify }) {
+function ClientHeader({ onMenu, onNotify, client }) {
+  const clientName = client?.client ?? "cliente";
   return (
     <header className="client-header">
       <button className="icon-button" onClick={onMenu} aria-label="Abrir menu">
@@ -325,7 +363,7 @@ function ClientHeader({ onMenu, onNotify }) {
       </button>
       <div>
         <p className="eyebrow">Bem-vindo de volta</p>
-        <h1>Olá, Lucas. Esse é o seu mês na Look.</h1>
+        <h1>Olá, {getClientFirstName(clientName)}. Esse é o seu mês na Look.</h1>
       </div>
       <button className="icon-button ghost" onClick={onNotify} aria-label="Notificações">
         <Bell size={19} />
@@ -334,12 +372,15 @@ function ClientHeader({ onMenu, onNotify }) {
   );
 }
 
-function Hero({ onPlan }) {
+function Hero({ onPlan, client }) {
+  const planLabel = client?.lastMetricMonth && client.lastMetricMonth !== "Sem dados"
+    ? `${client.lastMetricMonth.toLowerCase()} 2026`
+    : "Agosto 2026";
   return (
     <section className="hero-panel">
       <div className="hero-copy">
         <div className="hero-topline">
-          <span>Planejamento - Agosto 2026</span>
+          <span>Planejamento - {planLabel}</span>
           <span className="pill-dark">8 em andamento</span>
         </div>
         <h2>Conteúdo, ações e aprovações em um só lugar.</h2>
@@ -380,10 +421,10 @@ function TodayCard({ nextPost, onReview, onFullPlanning }) {
   );
 }
 
-function MetricGrid({ openModal, setView }) {
+function MetricGrid({ openModal, setView, metrics = clientMetrics }) {
   return (
     <section className="metric-grid">
-      {clientMetrics.map((item) => {
+      {metrics.map((item) => {
         const Icon = item.icon;
         const handleClick = () => item.target === "files" ? openModal("files") : setView(item.target);
         return (
@@ -737,16 +778,17 @@ function BottomNav({ active, setActive }) {
   );
 }
 
-function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, actions, syncState, trafficReport }) {
+function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, actions, syncState, trafficReport, client }) {
   const openItem = (item) => openModal("detail", item);
-  const openFullPlanning = () => openModal("fullPlanning", { posts: fullPosts });
+  const openFullPlanning = () => openModal("fullPlanning", { posts: fullPosts, client: client?.client });
   const nextPost = posts[0];
+  const metrics = buildClientMetricCards(client);
   const homeContent = (
     <>
-      <Hero onPlan={openFullPlanning} />
+      <Hero onPlan={openFullPlanning} client={client} />
       <TodayCard nextPost={nextPost} onReview={openItem} onFullPlanning={openFullPlanning} />
       {syncState.synced && <SyncNotice syncState={syncState} />}
-      <MetricGrid openModal={openModal} setView={setActive} />
+      <MetricGrid openModal={openModal} setView={setActive} metrics={metrics} />
       <Publications posts={posts} onPost={openItem} onFullPlanning={openFullPlanning} />
       <ProgressActions actions={actions} onAction={openItem} />
     </>
@@ -754,7 +796,7 @@ function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, 
 
   return (
     <div className="client-shell">
-      <ClientHeader onMenu={openMenu} onNotify={() => openModal("notifications")} />
+      <ClientHeader onMenu={openMenu} onNotify={() => openModal("notifications")} client={client} />
       <main className="client-main">
         {active === "inicio" ? (
           <div className="client-desktop-grid">
@@ -762,7 +804,7 @@ function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, 
             <aside className="client-aside">
               <TodayCard nextPost={nextPost} onReview={openItem} onFullPlanning={openFullPlanning} />
               {syncState.synced && <SyncNotice syncState={syncState} />}
-              <MetricGrid openModal={openModal} setView={setActive} />
+              <MetricGrid openModal={openModal} setView={setActive} metrics={metrics} />
               <ProgressActions actions={actions.slice(0, 3)} onAction={openItem} />
             </aside>
           </div>
@@ -1165,7 +1207,9 @@ function TeamQueue({ openModal }) {
   );
 }
 
-function IntegrationsPanel({ syncState, onSync, openModal }) {
+function IntegrationsPanel({ syncState, onSync, openModal, clients, selectedClientId, onClientChange }) {
+  const activeClients = clients.filter((client) => client.status === "Ativo");
+  const selectedClient = activeClients.find((client) => client.id === selectedClientId) ?? activeClients[0];
   const mappedStatuses = [
     ["A fazer", "Planejado"],
     ["Em produção", "Em produção"],
@@ -1199,9 +1243,9 @@ function IntegrationsPanel({ syncState, onSync, openModal }) {
           <span>Espaço: Clientes ativos</span>
         </article>
         <article>
-          <p className="eyebrow">Lista monitorada</p>
-          <strong>BIANCA / LUCAS</strong>
-          <span>Lista ID 901108723170</span>
+          <p className="eyebrow">Cliente monitorado</p>
+          <strong>{selectedClient?.client ?? "Nenhum cliente ativo"}</strong>
+          <span>{syncState.synced ? `Lista ID ${syncState.listId ?? "conectada"}` : "Selecione e sincronize"}</span>
         </article>
         <article>
           <p className="eyebrow">Última sincronização</p>
@@ -1209,6 +1253,19 @@ function IntegrationsPanel({ syncState, onSync, openModal }) {
           <span>{syncState.synced ? `${syncState.imported} tarefas importadas` : "Clique para importar os dados"}</span>
         </article>
       </div>
+
+      <label className="client-selector">
+        <span>Cliente para sincronizar</span>
+        <select
+          value={selectedClient?.id ?? ""}
+          onChange={(event) => onClientChange(event.target.value)}
+          disabled={!activeClients.length || syncState.syncing}
+        >
+          {activeClients.map((client) => (
+            <option key={client.id} value={client.id}>{client.client}</option>
+          ))}
+        </select>
+      </label>
 
       <div className="mapping-card">
         <div className="section-title">
@@ -1226,17 +1283,19 @@ function IntegrationsPanel({ syncState, onSync, openModal }) {
         ))}
       </div>
 
-      <button className="primary-wide sync-button" onClick={onSync}>
+      <button className="primary-wide sync-button" onClick={() => onSync(selectedClient)} disabled={!selectedClient || syncState.syncing}>
         <RefreshCw size={16} /> {syncState.syncing ? "Sincronizando..." : syncState.synced ? "Sincronizar novamente" : "Sincronizar ClickUp agora"}
       </button>
     </div>
   );
 }
 
-function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange }) {
+function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange }) {
   if (active === "visao") {
     return <AdminOverview openModal={openModal} setActive={setActive} syncState={syncState} clientDirectory={clientDirectory} />;
   }
+
+  const selectedSyncClient = clientDirectory.find((client) => client.id === selectedSyncClientId) ?? clientDirectory.find((client) => client.status === "Ativo");
 
   const views = {
     clientes: {
@@ -1273,7 +1332,7 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
       title: "Integrações",
       intro: "Conecte as ferramentas internas da Look e escolha o que aparece no portal do cliente.",
       action: syncState.synced ? "Sincronizar novamente" : "Sincronizar ClickUp",
-      body: <IntegrationsPanel syncState={syncState} onSync={onSync} openModal={openModal} />
+      body: <IntegrationsPanel syncState={syncState} onSync={onSync} openModal={openModal} clients={clientDirectory} selectedClientId={selectedSyncClientId} onClientChange={onSyncClientChange} />
     }
   }[active];
 
@@ -1285,7 +1344,7 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
           <h2>{views.title}</h2>
           <p>{views.intro}</p>
         </div>
-        <button className="primary-admin" onClick={active === "integracoes" ? onSync : () => active === "trafego" ? document.getElementById("traffic-pdf-upload")?.click() : active === "metricas" ? openModal("metricImport") : active === "clientes" ? onCreateClient() : openModal("published")}>
+        <button className="primary-admin" onClick={active === "integracoes" ? () => onSync(selectedSyncClient) : () => active === "trafego" ? document.getElementById("traffic-pdf-upload")?.click() : active === "metricas" ? openModal("metricImport") : active === "clientes" ? onCreateClient() : openModal("published")}>
           <Plus size={17} /> {views.action}
         </button>
       </div>
@@ -1350,7 +1409,7 @@ function AdminAccessPanel({ activeAdminId, onAdminChange, allClients, visibleCli
   );
 }
 
-function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, currentProfile, currentAdminId, onAdminChange, onSignOut, selectedTrafficClientId, onTrafficClientChange }) {
+function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, currentProfile, currentAdminId, onAdminChange, onSignOut, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange }) {
   const [active, setActive] = useState("visao");
   const activeAdminId = currentAdminId ?? "cecilio";
   const pageTitle = adminViews.find(([key]) => key === active)?.[1] ?? "Visão geral";
@@ -1394,6 +1453,8 @@ function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUplo
           onCreateClient={() => onCreateClient(activeAdminId)}
           selectedTrafficClientId={selectedTrafficClientId}
           onTrafficClientChange={onTrafficClientChange}
+          selectedSyncClientId={selectedSyncClientId}
+          onSyncClientChange={onSyncClientChange}
         />
       </main>
     </div>
@@ -1411,7 +1472,7 @@ function Modal({ type, data, onClose }) {
     planning: {
       eyebrow: "Planejamento mensal",
       title: "Agosto 2026",
-      intro: "Planejamento de conteúdo e ações para Lucas Fraga.",
+      intro: `Planejamento de conteúdo e ações para ${data?.client ?? "o cliente"}.`,
       body: <PlanSummary />
     },
     fullPlanning: {
@@ -1598,8 +1659,12 @@ function SyncResult({ data }) {
   return (
     <div className="sync-result">
       <div>
-        <strong>Lista LUCAS</strong>
-        <span>{data?.listId ?? "901108723170"}</span>
+        <strong>Cliente</strong>
+        <span>{data?.client ?? "Cliente selecionado"}</span>
+      </div>
+      <div>
+        <strong>Lista ClickUp</strong>
+        <span>{data?.listId ?? "Aguardando configuração"}</span>
       </div>
       <div>
         <strong>Status encontrados</strong>
@@ -1680,7 +1745,7 @@ function ActionChoices() {
   );
 }
 
-function SideMenu({ active, setActive, onClose }) {
+function SideMenu({ active, setActive, onClose, client }) {
   const items = [
     ["inicio", "Início", Home],
     ["acoes", "Ações", Layers3],
@@ -1701,7 +1766,7 @@ function SideMenu({ active, setActive, onClose }) {
         </div>
         <div className="profile-card">
           <span>Perfil do cliente</span>
-          <strong>Lucas Fraga</strong>
+          <strong>{client?.client ?? "Cliente Look"}</strong>
         </div>
         <nav>
           {items.map(([key, label, Icon]) => (
@@ -1782,25 +1847,18 @@ function App() {
   const [clientView, setClientView] = useState("inicio");
   const [modal, setModal] = useState(null);
   const [menu, setMenu] = useState(false);
-  const [importedPosts, setImportedPosts] = useState([]);
-  const [importedFullPosts, setImportedFullPosts] = useState([]);
-  const [importedActions, setImportedActions] = useState([]);
+  const [planningByClient, setPlanningByClient] = useState({});
   const [trafficReportsByClient, setTrafficReportsByClient] = useState(() => ({
     [slugFromClient(defaultTrafficReport.client)]: defaultTrafficReport
   }));
   const [selectedTrafficClientId, setSelectedTrafficClientId] = useState(slugFromClient(defaultTrafficReport.client));
   const [clientDirectory, setClientDirectory] = useState(() => buildClientDirectory());
-  const [syncState, setSyncState] = useState({
-    synced: false,
-    imported: 0,
-    upcoming: 0,
-    lastSync: "Não sincronizado",
-    syncing: false,
-    source: "ClickUp"
-  });
   const [session, setSession] = useState(null);
   const [currentProfile, setCurrentProfile] = useState(null);
+  const [currentClient, setCurrentClient] = useState(null);
   const [currentAdminId, setCurrentAdminId] = useState("cecilio");
+  const [syncStatesByClient, setSyncStatesByClient] = useState({});
+  const [selectedSyncClientId, setSelectedSyncClientId] = useState(slugFromClient(defaultTrafficReport.client));
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [authError, setAuthError] = useState("");
 
@@ -1809,7 +1867,16 @@ function App() {
   const trafficReport = selectedTrafficClient
     ? trafficReportsByClient[selectedTrafficClient.id] ?? buildTrafficReportForClient(selectedTrafficClient.client)
     : buildTrafficReportForClient("Cliente selecionado");
-  const clientTrafficReport = trafficReportsByClient[slugFromClient("Lucas Fraga")] ?? defaultTrafficReport;
+  const fallbackClient = clientDirectory.find((client) => client.id === slugFromClient("Lucas Fraga")) ?? clientDirectory[0];
+  const portalClient = currentClient ?? fallbackClient;
+  const portalClientId = portalClient?.id ?? slugFromClient("Lucas Fraga");
+  const clientTrafficReport = trafficReportsByClient[portalClientId] ?? buildTrafficReportForClient(portalClient?.client ?? "Cliente Look");
+  const syncVisibleClients = filterClientsForAdmin(clientDirectory, currentAdminId).filter((client) => client.status === "Ativo");
+  const selectedSyncClient = syncVisibleClients.find((client) => client.id === selectedSyncClientId) ?? syncVisibleClients[0] ?? clientDirectory[0];
+  const activeSyncClientId = selectedSyncClient?.id ?? selectedSyncClientId;
+  const adminSyncState = syncStatesByClient[activeSyncClientId] ?? defaultSyncState;
+  const clientPlanning = planningByClient[portalClientId] ?? {};
+  const clientSyncState = syncStatesByClient[portalClientId] ?? defaultSyncState;
   const applySupabaseUser = async (user) => {
     if (!supabase || !user) return;
 
@@ -1834,8 +1901,61 @@ function App() {
       role: "client"
     };
     const account = getAdminAccountByEmail(profile.email);
+    let linkedClient = null;
+
+    if (!isAdminProfile(profile)) {
+      const { data: accessRows, error: accessError } = await supabase
+        .from("user_client_access")
+        .select("client_id, access_level")
+        .eq("user_id", user.id)
+        .limit(1);
+
+      if (accessError) {
+        setAuthError(accessError.message);
+        setAuthLoading(false);
+        return;
+      }
+
+      const firstAccess = accessRows?.[0];
+      if (!firstAccess) {
+        setAuthError("Este login ainda não está vinculado a um cliente no Supabase.");
+        setAuthLoading(false);
+        return;
+      }
+
+      const { data: clientData, error: clientError } = await supabase
+        .from("clients")
+        .select("id,name,status,social_media_group")
+        .eq("id", firstAccess.client_id)
+        .maybeSingle();
+
+      if (clientError || !clientData) {
+        setAuthError(clientError?.message ?? "Cliente vinculado não encontrado no Supabase.");
+        setAuthLoading(false);
+        return;
+      }
+
+      const directoryClient = clientDirectory.find((client) => normalizeClientName(client.client) === normalizeClientName(clientData.name));
+      linkedClient = {
+        ...(directoryClient ?? {
+          lastMetricMonth: "Sem dados",
+          metricsCount: 0,
+          followers: null,
+          source: "Supabase",
+          owner: clientData.social_media_group ?? "Equipe Look",
+          ownerId: "cecilio",
+          metricClient: resolveMetricClientName(clientData.name)
+        }),
+        id: slugFromClient(clientData.name),
+        supabaseId: clientData.id,
+        client: clientData.name,
+        status: statusFromSupabase(clientData.status),
+        access: statusFromSupabase(clientData.status) === "Ativo" ? "Liberado" : "Bloqueado"
+      };
+    }
 
     setCurrentProfile(profile);
+    setCurrentClient(linkedClient);
     setCurrentAdminId(profile.role === "admin_master" ? "cecilio" : account.id);
     setArea(isAdminProfile(profile) ? "admin" : "client");
     setAuthLoading(false);
@@ -1868,6 +1988,7 @@ function App() {
 
     setSession(null);
     setCurrentProfile(null);
+    setCurrentClient(null);
     setCurrentAdminId("cecilio");
     setArea(null);
   };
@@ -1912,6 +2033,7 @@ function App() {
       }
 
       setCurrentProfile(null);
+      setCurrentClient(null);
       setArea(null);
     });
 
@@ -1972,45 +2094,80 @@ function App() {
     openModal("trafficUploaded", { file: file.name, client: clientName });
   };
 
-  const handleSyncClickUp = async () => {
-    setSyncState((current) => ({ ...current, syncing: true }));
+  const handleSyncClickUp = async (client) => {
+    const clientToSync = client ?? selectedSyncClient;
+    if (!clientToSync) {
+      openModal("syncError", { message: "Selecione um cliente ativo antes de sincronizar." });
+      return;
+    }
+
+    const clientId = clientToSync.id;
+    const clientName = clientToSync.client;
+    setSelectedSyncClientId(clientId);
+    setSyncStatesByClient((current) => ({
+      ...current,
+      [clientId]: { ...(current[clientId] ?? defaultSyncState), syncing: true }
+    }));
     try {
       const isLocalhost = ["127.0.0.1", "localhost"].includes(window.location.hostname);
-      if (!isLocalhost) {
-        throw new Error("A sincronizacao com ClickUp esta protegida no deploy. A proxima etapa e publicar uma rota autenticada por Supabase antes de liberar anexos reais.");
+      const endpoint = isLocalhost
+        ? `http://127.0.0.1:8787/api/clickup?clientId=${encodeURIComponent(clientId)}`
+        : `/api/clickup?clientId=${encodeURIComponent(clientId)}`;
+      const headers = {};
+
+      if (isSupabaseConfigured) {
+        if (!session?.access_token) {
+          throw new Error("Entre no portal antes de sincronizar o ClickUp.");
+        }
+        headers.Authorization = `Bearer ${session.access_token}`;
       }
-      const response = await fetch("http://127.0.0.1:8787/api/clickup/lucas");
+
+      const response = await fetch(endpoint, { headers });
       const payload = await response.json();
 
       if (!response.ok) {
         throw new Error(payload.error || "Não foi possível sincronizar com o ClickUp.");
       }
 
-      setImportedPosts(payload.posts ?? []);
-      setImportedFullPosts(payload.allPosts ?? payload.posts ?? []);
-      setImportedActions(payload.actions ?? []);
-      setSyncState({
-        synced: true,
-        imported: payload.imported ?? 0,
-        upcoming: payload.upcomingCount ?? payload.posts?.length ?? 0,
-        lastSync: payload.syncedAt ?? "Agora",
-        syncing: false,
-        source: "ClickUp real"
-      });
+      setPlanningByClient((current) => ({
+        ...current,
+        [clientId]: {
+          posts: payload.posts ?? [],
+          fullPosts: payload.allPosts ?? payload.posts ?? [],
+          actions: payload.actions ?? []
+        }
+      }));
+      setSyncStatesByClient((current) => ({
+        ...current,
+        [clientId]: {
+          synced: true,
+          imported: payload.imported ?? 0,
+          upcoming: payload.upcomingCount ?? payload.posts?.length ?? 0,
+          lastSync: payload.syncedAt ?? "Agora",
+          syncing: false,
+          source: `ClickUp real - ${clientName}`,
+          listId: payload.listId,
+          client: payload.client ?? clientName
+        }
+      }));
       openModal("syncComplete", {
         imported: payload.imported ?? 0,
         upcoming: payload.upcomingCount ?? payload.posts?.length ?? 0,
         statuses: payload.rawStatuses ?? [],
-        listId: payload.listId
+        listId: payload.listId,
+        client: payload.client ?? clientName
       });
     } catch (error) {
-      setSyncState((current) => ({ ...current, syncing: false }));
+      setSyncStatesByClient((current) => ({
+        ...current,
+        [clientId]: { ...(current[clientId] ?? defaultSyncState), syncing: false }
+      }));
       openModal("syncError", { message: error.message });
     }
   };
-  const portalPosts = syncState.synced ? importedPosts : posts;
-  const fullPlanningPosts = syncState.synced ? importedFullPosts : posts;
-  const portalActions = syncState.synced ? [...importedActions, ...actions] : actions;
+  const portalPosts = clientSyncState.synced ? clientPlanning.posts ?? [] : posts;
+  const fullPlanningPosts = clientSyncState.synced ? clientPlanning.fullPosts ?? [] : posts;
+  const portalActions = clientSyncState.synced ? [...(clientPlanning.actions ?? []), ...actions] : actions;
   const label = useMemo(() => area === "admin" ? "Ver área do cliente" : "Ver painel ADM", [area]);
 
   const switchLabel = isSupabaseConfigured ? "Sair" : label;
@@ -2027,7 +2184,7 @@ function App() {
       {area === "admin" ? (
         <AdminPanel
           openModal={openModal}
-          syncState={syncState}
+          syncState={adminSyncState}
           onSync={handleSyncClickUp}
           trafficReport={trafficReport}
           onTrafficUpload={handleTrafficUpload}
@@ -2040,6 +2197,8 @@ function App() {
           onSignOut={handleSignOut}
           selectedTrafficClientId={selectedTrafficClientId}
           onTrafficClientChange={setSelectedTrafficClientId}
+          selectedSyncClientId={activeSyncClientId}
+          onSyncClientChange={setSelectedSyncClientId}
         />
       ) : (
         <ClientArea
@@ -2050,12 +2209,13 @@ function App() {
           posts={portalPosts}
           fullPosts={fullPlanningPosts}
           actions={portalActions}
-          syncState={syncState}
+          syncState={clientSyncState}
           trafficReport={clientTrafficReport}
+          client={portalClient}
         />
       )}
       {modal && <Modal type={modal.type} data={modal.data} onClose={() => setModal(null)} />}
-      {menu && <SideMenu active={clientView} setActive={setClientView} onClose={() => setMenu(false)} />}
+      {menu && <SideMenu active={clientView} setActive={setClientView} onClose={() => setMenu(false)} client={portalClient} />}
     </div>
   );
 }

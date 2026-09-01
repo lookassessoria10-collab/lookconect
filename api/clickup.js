@@ -1,20 +1,12 @@
-import http from "node:http";
-import fs from "node:fs";
-import path from "node:path";
+const { createClient } = require("@supabase/supabase-js");
 
-const envPath = path.join(process.cwd(), ".env.local");
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+  || process.env.NEXT_PUBLIC_SUPABASE_URL
+  || "https://wnpgawzvjdxevuweueou.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  || "sb_publishable_Z8ud3e334gWZtUqHwul5tg_QYEYVDUU";
 
-if (fs.existsSync(envPath)) {
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/);
-    if (match && !process.env[match[1]]) {
-      process.env[match[1]] = match[2].replace(/^["']|["']$/g, "");
-    }
-  }
-}
-
-const PORT = Number(process.env.PORT ?? 8787);
 const LOOK_CLIENTS = [
   "Cardiocenter",
   "Daniela Moura",
@@ -33,6 +25,10 @@ const LOOK_CLIENTS = [
   "Serenity",
   "Isabor"
 ];
+
+function sendJson(res, status, payload) {
+  res.status(status).json(payload);
+}
 
 function normalizeText(value = "") {
   return String(value)
@@ -58,14 +54,24 @@ function getKnownClient(clientId) {
   ));
 }
 
+function getBearerToken(req) {
+  const authorization = req.headers.authorization || req.headers.Authorization || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || null;
+}
+
 function getConfiguredListId(clientName) {
   const slug = slugFromClient(clientName);
   const fromJson = process.env.CLICKUP_LISTS_JSON;
 
   if (fromJson) {
-    const parsed = JSON.parse(fromJson);
-    const direct = parsed[clientName] || parsed[slug] || parsed[normalizeText(clientName)];
-    if (direct) return String(direct);
+    try {
+      const parsed = JSON.parse(fromJson);
+      const direct = parsed[clientName] || parsed[slug] || parsed[normalizeText(clientName)];
+      if (direct) return String(direct);
+    } catch {
+      throw new Error("CLICKUP_LISTS_JSON precisa ser um JSON valido.");
+    }
   }
 
   return process.env[envKeyForClient(clientName)]
@@ -100,23 +106,13 @@ async function findListInConfiguredFolders(clientName, token) {
   return null;
 }
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "http://127.0.0.1:5173",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization"
-  });
-  res.end(JSON.stringify(payload));
-}
-
 function normalizeStatus(status) {
   const raw = typeof status === "string" ? status : status?.status ?? "";
   const value = raw.toLowerCase();
   if (value.includes("postado") || value.includes("publicado")) return "Publicado";
   if (value.includes("aprovado")) return "Aprovado";
-  if (value.includes("cliente") || value.includes("revis")) return "Aguardando aprovação";
-  if (value.includes("produção") || value.includes("producao")) return "Em produção";
+  if (value.includes("cliente") || value.includes("revis")) return "Aguardando aprovacao";
+  if (value.includes("produ") || value.includes("production")) return "Em producao";
   if (value.includes("planejamento") || value.includes("rascunho") || value.includes("pauta")) return "Planejado";
   return raw || "Sem status";
 }
@@ -134,11 +130,25 @@ function formatDate(ms) {
   };
 }
 
+function mapAttachments(attachments = []) {
+  return attachments
+    .map((attachment) => ({
+      id: attachment.id,
+      title: attachment.title || attachment.filename || attachment.name || "Anexo",
+      url: attachment.url || attachment.url_w_query,
+      mimeType: attachment.mimetype,
+      extension: attachment.extension,
+      isImage: attachment.mimetype?.startsWith("image/") || ["png", "jpg", "jpeg", "webp"].includes(attachment.extension)
+    }))
+    .filter((attachment) => attachment.url);
+}
+
 function mapTask(task) {
   const normalizedStatus = normalizeStatus(task.status);
   const dateInfo = formatDate(task.due_date || task.start_date || task.date_updated);
   const upperName = normalizeText(task.name ?? "");
-  const isAction = upperName.startsWith("ACAO") || upperName.includes("| ACAO");
+  const isAction = upperName.startsWith("ACAO")
+    || upperName.includes("| ACAO");
 
   return {
     id: task.id,
@@ -153,19 +163,8 @@ function mapTask(task) {
     attachments: mapAttachments(task.attachments),
     assignees: task.assignees?.map((person) => person.username).filter(Boolean) ?? [],
     type: isAction ? "action" : "content",
-    value: normalizedStatus === "Publicado" ? 100 : normalizedStatus === "Aprovado" ? 86 : normalizedStatus === "Aguardando aprovação" ? 68 : 42
+    value: normalizedStatus === "Publicado" ? 100 : normalizedStatus === "Aprovado" ? 86 : normalizedStatus === "Aguardando aprovacao" ? 68 : 42
   };
-}
-
-function mapAttachments(attachments = []) {
-  return attachments.map((attachment) => ({
-    id: attachment.id,
-    title: attachment.title || attachment.filename || attachment.name || "Anexo",
-    url: attachment.url || attachment.url_w_query,
-    mimeType: attachment.mimetype,
-    extension: attachment.extension,
-    isImage: attachment.mimetype?.startsWith("image/") || ["png", "jpg", "jpeg", "webp"].includes(attachment.extension)
-  })).filter((attachment) => attachment.url);
 }
 
 async function fetchTaskDetail(taskId, token) {
@@ -213,20 +212,88 @@ function toPost(task) {
   };
 }
 
-async function fetchClickUpTasks(clientId = "lucas-fraga") {
-  const token = process.env.CLICKUP_TOKEN;
+async function ensureCanAccessClient(req, clientId) {
+  const token = getBearerToken(req);
   if (!token) {
-    throw new Error("CLICKUP_TOKEN não configurado no backend local.");
+    return { allowed: false, status: 401, message: "Login obrigatorio para sincronizar o ClickUp." };
   }
 
-  const clientName = getKnownClient(clientId);
-  if (!clientName) {
-    throw new Error("Cliente n�o encontrado no portal.");
+  const fallbackName = getKnownClient(clientId);
+  if (!fallbackName) {
+    return { allowed: false, status: 404, message: "Cliente nao encontrado no portal." };
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    }
+  });
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !userData?.user) {
+    return { allowed: false, status: 401, message: "Sessao Supabase invalida ou expirada." };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role,email,full_name")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { allowed: false, status: 403, message: "Perfil do portal nao encontrado para este usuario." };
+  }
+
+  const { data: clients, error: clientError } = await supabase
+    .from("clients")
+    .select("id,name,status")
+    .eq("status", "active");
+
+  if (clientError) {
+    return { allowed: false, status: 403, message: "Nao foi possivel validar este cliente no Supabase." };
+  }
+
+  const client = (clients ?? []).find((item) => (
+    slugFromClient(item.name) === clientId || normalizeText(item.name) === normalizeText(fallbackName)
+  ));
+
+  if (!client) {
+    return { allowed: false, status: 404, message: "Cliente ativo nao encontrado no Supabase." };
+  }
+
+  if (profile.role === "admin_master") {
+    return { allowed: true, profile, client };
+  }
+
+  const { data: access, error: accessError } = await supabase
+    .from("user_client_access")
+    .select("client_id,access_level")
+    .eq("user_id", userData.user.id)
+    .eq("client_id", client.id)
+    .maybeSingle();
+
+  if (accessError || !access) {
+    return { allowed: false, status: 403, message: "Este usuario nao tem permissao explicita para sincronizar este cliente." };
+  }
+
+  return { allowed: true, profile, client };
+}
+
+async function fetchClickUpTasks(clientName) {
+  const token = process.env.CLICKUP_TOKEN;
+  if (!token) {
+    throw new Error("CLICKUP_TOKEN nao configurado na Vercel.");
   }
 
   const listId = getConfiguredListId(clientName) || await findListInConfiguredFolders(clientName, token);
   if (!listId) {
-    throw new Error(`Lista do ClickUp n�o configurada para ${clientName}. Cadastre ${envKeyForClient(clientName)} ou CLICKUP_LISTS_JSON.`);
+    throw new Error(`Lista do ClickUp nao configurada para ${clientName}. Cadastre ${envKeyForClient(clientName)} ou CLICKUP_LISTS_JSON.`);
   }
 
   const allTasks = [];
@@ -265,12 +332,7 @@ async function fetchClickUpTasks(clientId = "lucas-fraga") {
   const detailById = new Map(detailTasks.map((task) => [task.id, task]));
   mapped = mapped.map((task) => detailById.get(task.id) ?? task);
 
-  const allPosts = mapped
-    .filter((task) => task.type === "content")
-    .sort(sortPlanning)
-    .slice(0, 80)
-    .map(toPost);
-
+  const allPosts = mapped.filter((task) => task.type === "content").sort(sortPlanning).slice(0, 80).map(toPost);
   const posts = mapped
     .filter((task) => task.type === "content" && isWithinNextSevenDays(task))
     .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
@@ -306,40 +368,30 @@ async function fetchClickUpTasks(clientId = "lucas-fraga") {
   };
 }
 
-const server = http.createServer(async (req, res) => {
+module.exports = async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
   if (req.method === "OPTIONS") {
-    sendJson(res, 204, {});
+    res.status(204).end();
     return;
   }
 
-  if (req.method === "GET" && req.url === "/api/health") {
-    sendJson(res, 200, { ok: true });
+  if (req.method !== "GET") {
+    sendJson(res, 405, { error: "Metodo nao permitido." });
     return;
   }
 
-  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
-
-  if (req.method === "GET" && requestUrl.pathname === "/api/clickup") {
-    try {
-      sendJson(res, 200, await fetchClickUpTasks(requestUrl.searchParams.get("clientId") ?? "lucas-fraga"));
-    } catch (error) {
-      sendJson(res, 500, { error: error.message });
-    }
+  const clientId = String(req.query?.clientId || req.query?.client || "lucas-fraga");
+  const access = await ensureCanAccessClient(req, clientId);
+  if (!access.allowed) {
+    sendJson(res, access.status, { error: access.message });
     return;
   }
 
-  if (req.method === "GET" && requestUrl.pathname === "/api/clickup/lucas") {
-    try {
-      sendJson(res, 200, await fetchClickUpTasks("lucas-fraga"));
-    } catch (error) {
-      sendJson(res, 500, { error: error.message });
-    }
-    return;
+  try {
+    sendJson(res, 200, await fetchClickUpTasks(access.client.name));
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
   }
-
-  sendJson(res, 404, { error: "Rota não encontrada." });
-});
-
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Portal Look API em http://127.0.0.1:${PORT}`);
-});
+};
