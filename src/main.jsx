@@ -94,6 +94,17 @@ const defaultTrafficReport = {
   ]
 };
 
+function buildTrafficReportForClient(clientName) {
+  return {
+    ...defaultTrafficReport,
+    client: clientName,
+    status: "Aguardando PDF",
+    updatedAt: "Nenhum arquivo enviado",
+    uploadedFile: null,
+    summary: `Quando o PDF de trafego pago de ${clientName} for enviado no ADM, o cliente passa a visualizar o relatorio formatado nesta aba.`
+  };
+}
+
 const adminViews = [
   ["visao", "Visão geral", Home],
   ["clientes", "Clientes", Users],
@@ -585,17 +596,35 @@ function TrafficReport({ report, adminPreview = false }) {
   );
 }
 
-function TrafficAdminPanel({ report, onUpload, openModal }) {
+function TrafficAdminPanel({ report, onUpload, openModal, clients, selectedClientId, onClientChange }) {
+  const activeClients = clients.filter((client) => client.status === "Ativo");
+  const selectedClient = activeClients.find((client) => client.id === selectedClientId) ?? activeClients[0];
   const handleChange = (event) => {
     const file = event.target.files?.[0];
-    if (file) onUpload(file);
+    if (file && selectedClient) onUpload(file, selectedClient);
     event.target.value = "";
   };
 
   return (
     <div className="traffic-admin">
+      <section className="traffic-client-picker">
+        <div>
+          <p className="eyebrow">Cliente do relatorio</p>
+          <h3>{selectedClient?.client ?? "Nenhum cliente ativo"}</h3>
+          <span>O PDF enviado abaixo sera publicado somente para este cliente.</span>
+        </div>
+        <label>
+          <span>Escolher cliente antes do upload</span>
+          <select value={selectedClient?.id ?? ""} onChange={(event) => onClientChange(event.target.value)} disabled={!activeClients.length}>
+            {activeClients.length ? activeClients.map((client) => (
+              <option key={client.id} value={client.id}>{client.client}</option>
+            )) : <option>Nenhum cliente ativo</option>}
+          </select>
+        </label>
+      </section>
+
       <label className="upload-drop" htmlFor="traffic-pdf-upload">
-        <input id="traffic-pdf-upload" type="file" accept="application/pdf" onChange={handleChange} />
+        <input id="traffic-pdf-upload" type="file" accept="application/pdf" onChange={handleChange} disabled={!selectedClient} />
         <Upload size={22} />
         <strong>Subir PDF de tráfego pago</strong>
         <span>Ao selecionar um PDF, o protótipo atualiza o relatório formatado que aparece para o cliente.</span>
@@ -1204,7 +1233,7 @@ function IntegrationsPanel({ syncState, onSync, openModal }) {
   );
 }
 
-function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient }) {
+function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange }) {
   if (active === "visao") {
     return <AdminOverview openModal={openModal} setActive={setActive} syncState={syncState} clientDirectory={clientDirectory} />;
   }
@@ -1232,7 +1261,7 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
       title: "Tráfego pago",
       intro: "Consolide investimento, leads, custo por lead e leitura estratégica.",
       action: "Subir PDF",
-      body: <TrafficAdminPanel report={trafficReport} onUpload={onTrafficUpload} openModal={openModal} />
+      body: <TrafficAdminPanel report={trafficReport} onUpload={onTrafficUpload} openModal={openModal} clients={clientDirectory} selectedClientId={selectedTrafficClientId} onClientChange={onTrafficClientChange} />
     },
     relatorios: {
       title: "Relatórios",
@@ -1321,7 +1350,7 @@ function AdminAccessPanel({ activeAdminId, onAdminChange, allClients, visibleCli
   );
 }
 
-function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, currentProfile, currentAdminId, onAdminChange, onSignOut }) {
+function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, currentProfile, currentAdminId, onAdminChange, onSignOut, selectedTrafficClientId, onTrafficClientChange }) {
   const [active, setActive] = useState("visao");
   const activeAdminId = currentAdminId ?? "cecilio";
   const pageTitle = adminViews.find(([key]) => key === active)?.[1] ?? "Visão geral";
@@ -1363,6 +1392,8 @@ function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUplo
           clientDirectory={visibleClients}
           onClientStatusChange={onClientStatusChange}
           onCreateClient={() => onCreateClient(activeAdminId)}
+          selectedTrafficClientId={selectedTrafficClientId}
+          onTrafficClientChange={onTrafficClientChange}
         />
       </main>
     </div>
@@ -1754,7 +1785,10 @@ function App() {
   const [importedPosts, setImportedPosts] = useState([]);
   const [importedFullPosts, setImportedFullPosts] = useState([]);
   const [importedActions, setImportedActions] = useState([]);
-  const [trafficReport, setTrafficReport] = useState(defaultTrafficReport);
+  const [trafficReportsByClient, setTrafficReportsByClient] = useState(() => ({
+    [slugFromClient(defaultTrafficReport.client)]: defaultTrafficReport
+  }));
+  const [selectedTrafficClientId, setSelectedTrafficClientId] = useState(slugFromClient(defaultTrafficReport.client));
   const [clientDirectory, setClientDirectory] = useState(() => buildClientDirectory());
   const [syncState, setSyncState] = useState({
     synced: false,
@@ -1771,6 +1805,11 @@ function App() {
   const [authError, setAuthError] = useState("");
 
   const openModal = (type, data = null) => setModal({ type, data });
+  const selectedTrafficClient = clientDirectory.find((client) => client.id === selectedTrafficClientId) ?? clientDirectory[0];
+  const trafficReport = selectedTrafficClient
+    ? trafficReportsByClient[selectedTrafficClient.id] ?? buildTrafficReportForClient(selectedTrafficClient.client)
+    : buildTrafficReportForClient("Cliente selecionado");
+  const clientTrafficReport = trafficReportsByClient[slugFromClient("Lucas Fraga")] ?? defaultTrafficReport;
   const applySupabaseUser = async (user) => {
     if (!supabase || !user) return;
 
@@ -1908,9 +1947,15 @@ function App() {
     setClientDirectory((current) => [newClient, ...current]);
     openModal("clientCreated", newClient);
   };
-  const handleTrafficUpload = (file) => {
-    setTrafficReport((current) => ({
-      ...current,
+  const handleTrafficUpload = (file, client) => {
+    const clientId = client?.id ?? selectedTrafficClient?.id ?? selectedTrafficClientId;
+    const clientName = client?.client ?? selectedTrafficClient?.client ?? "Cliente selecionado";
+    setSelectedTrafficClientId(clientId);
+    setTrafficReportsByClient((currentReports) => ({
+      ...currentReports,
+      [clientId]: {
+      ...(currentReports[clientId] ?? buildTrafficReportForClient(clientName)),
+      client: clientName,
       source: "PDF importado no ADM",
       status: "PDF processado",
       updatedAt: "Publicado agora",
@@ -1922,8 +1967,9 @@ function App() {
         { label: "CPL médio", value: "R$ 18,09", hint: "custo controlado", tone: "blue" },
         { label: "Conversas qualificadas", value: "74", hint: "oportunidades comerciais", tone: "mint" }
       ]
+      }
     }));
-    openModal("trafficUploaded", { file: file.name });
+    openModal("trafficUploaded", { file: file.name, client: clientName });
   };
 
   const handleSyncClickUp = async () => {
@@ -1992,6 +2038,8 @@ function App() {
           currentAdminId={currentAdminId}
           onAdminChange={handleAdminChange}
           onSignOut={handleSignOut}
+          selectedTrafficClientId={selectedTrafficClientId}
+          onTrafficClientChange={setSelectedTrafficClientId}
         />
       ) : (
         <ClientArea
@@ -2003,7 +2051,7 @@ function App() {
           fullPosts={fullPlanningPosts}
           actions={portalActions}
           syncState={syncState}
-          trafficReport={trafficReport}
+          trafficReport={clientTrafficReport}
         />
       )}
       {modal && <Modal type={modal.type} data={modal.data} onClose={() => setModal(null)} />}
