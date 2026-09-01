@@ -62,6 +62,26 @@ const actions = [
   { label: "Preparação de campanha", value: 80 }
 ];
 
+function buildFallbackPostsForClient(client) {
+  const clientName = client?.client ?? "Cliente Look";
+
+  return [
+    { date: "07", weekday: "Quarta", title: `Conteúdo institucional para ${clientName}`, status: "Aguardando aprovação" },
+    { date: "12", weekday: "Segunda", title: `Reels de autoridade - ${clientName}`, status: "Em produção" },
+    { date: "18", weekday: "Domingo", title: `Post carrossel de dúvidas frequentes - ${clientName}`, status: "Planejado" }
+  ];
+}
+
+function buildFallbackActionsForClient(client) {
+  const clientName = client?.client ?? "Cliente Look";
+
+  return [
+    { label: `Revisar jornada de conteúdo de ${clientName}`, value: 58 },
+    { label: "Organizar próximas aprovações", value: 42 },
+    { label: "Preparar leitura estratégica do mês", value: 36 }
+  ];
+}
+
 const defaultTrafficReport = {
   client: "Lucas Fraga",
   period: "Agosto 2026",
@@ -372,16 +392,22 @@ function ClientHeader({ onMenu, onNotify, client }) {
   );
 }
 
-function Hero({ onPlan, client }) {
+function Hero({ onPlan, client, stats }) {
   const planLabel = client?.lastMetricMonth && client.lastMetricMonth !== "Sem dados"
     ? `${client.lastMetricMonth.toLowerCase()} 2026`
     : "Agosto 2026";
+  const dashboardStats = stats ?? {
+    progress: 42,
+    active: 3,
+    published: 0,
+    pending: 1
+  };
   return (
     <section className="hero-panel">
       <div className="hero-copy">
         <div className="hero-topline">
           <span>Planejamento - {planLabel}</span>
-          <span className="pill-dark">8 em andamento</span>
+          <span className="pill-dark">{dashboardStats.active} em andamento</span>
         </div>
         <h2>Conteúdo, ações e aprovações em um só lugar.</h2>
         <p>Acompanhe em tempo real tudo que a Look está construindo para sua marca.</p>
@@ -390,10 +416,10 @@ function Hero({ onPlan, client }) {
           <ChevronRight size={15} />
         </button>
       </div>
-      <ProgressRing value={68} />
+      <ProgressRing value={dashboardStats.progress} />
       <div className="hero-footer">
-        <span>8 conteúdos publicados</span>
-        <span>12 aprovações pendentes</span>
+        <span>{dashboardStats.published} conteúdos publicados</span>
+        <span>{dashboardStats.pending} aprovações pendentes</span>
       </div>
     </section>
   );
@@ -783,9 +809,19 @@ function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, 
   const openFullPlanning = () => openModal("fullPlanning", { posts: fullPosts, client: client?.client });
   const nextPost = posts[0];
   const metrics = buildClientMetricCards(client);
+  const publishedCount = fullPosts.filter((post) => post.status === "Publicado" || post.status === "Aprovado").length;
+  const pendingCount = fullPosts.filter((post) => post.status !== "Publicado" && post.status !== "Aprovado").length;
+  const heroStats = {
+    active: Math.max(pendingCount, actions.length, 0),
+    published: publishedCount,
+    pending: pendingCount,
+    progress: syncState.synced
+      ? Math.min(90, Math.max(20, Math.round((publishedCount / Math.max(fullPosts.length, 1)) * 100)))
+      : Math.min(68, 30 + Math.min(pendingCount, 4) * 8)
+  };
   const homeContent = (
     <>
-      <Hero onPlan={openFullPlanning} client={client} />
+      <Hero onPlan={openFullPlanning} client={client} stats={heroStats} />
       <TodayCard nextPost={nextPost} onReview={openItem} onFullPlanning={openFullPlanning} />
       {syncState.synced && <SyncNotice syncState={syncState} />}
       <MetricGrid openModal={openModal} setView={setActive} metrics={metrics} />
@@ -2165,9 +2201,11 @@ function App() {
       openModal("syncError", { message: error.message });
     }
   };
-  const portalPosts = clientSyncState.synced ? clientPlanning.posts ?? [] : posts;
-  const fullPlanningPosts = clientSyncState.synced ? clientPlanning.fullPosts ?? [] : posts;
-  const portalActions = clientSyncState.synced ? [...(clientPlanning.actions ?? []), ...actions] : actions;
+  const fallbackPosts = buildFallbackPostsForClient(portalClient);
+  const fallbackActions = buildFallbackActionsForClient(portalClient);
+  const portalPosts = clientSyncState.synced ? clientPlanning.posts ?? [] : fallbackPosts;
+  const fullPlanningPosts = clientSyncState.synced ? clientPlanning.fullPosts ?? [] : fallbackPosts;
+  const portalActions = clientSyncState.synced ? [...(clientPlanning.actions ?? []), ...fallbackActions] : fallbackActions;
   const label = useMemo(() => area === "admin" ? "Ver área do cliente" : "Ver painel ADM", [area]);
 
   const switchLabel = isSupabaseConfigured ? "Sair" : label;
