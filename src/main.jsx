@@ -247,8 +247,13 @@ const requestedLookClients = lookAdminAccounts
   .flatMap((account) => account.clients);
 
 const metricClientAliases = {
+  IL: "IL DISTRIBUIDORA",
   LUANDA: "LUANDA RODRIGUES",
   ISABOR: "ISABOR SANTANNA"
+};
+
+const displayClientAliases = {
+  IL: "IL Distribuidora"
 };
 
 function normalizeClientName(value) {
@@ -268,6 +273,11 @@ function resolveMetricClientName(clientName, rows = socialMetricRows) {
   const normalized = normalizeClientName(clientName);
   const target = metricClientAliases[normalized] ?? normalized;
   return rows.find((row) => normalizeClientName(row.client) === target)?.client ?? null;
+}
+
+function resolveDisplayClientName(clientName) {
+  const normalized = normalizeClientName(clientName);
+  return displayClientAliases[normalized] ?? clientName;
 }
 
 function findSocialOwner(clientName) {
@@ -1903,7 +1913,9 @@ function App() {
   const trafficReport = selectedTrafficClient
     ? trafficReportsByClient[selectedTrafficClient.id] ?? buildTrafficReportForClient(selectedTrafficClient.client)
     : buildTrafficReportForClient("Cliente selecionado");
-  const fallbackClient = clientDirectory.find((client) => client.id === slugFromClient("Lucas Fraga")) ?? clientDirectory[0];
+  const fallbackClient = !isSupabaseConfigured
+    ? clientDirectory.find((client) => client.id === slugFromClient("Lucas Fraga")) ?? clientDirectory[0]
+    : null;
   const portalClient = currentClient ?? fallbackClient;
   const portalClientId = portalClient?.id ?? slugFromClient("Lucas Fraga");
   const clientTrafficReport = trafficReportsByClient[portalClientId] ?? buildTrafficReportForClient(portalClient?.client ?? "Cliente Look");
@@ -1918,6 +1930,7 @@ function App() {
 
     setAuthLoading(true);
     setAuthError("");
+    setCurrentClient(null);
 
     const { data, error } = await supabase
       .from("profiles")
@@ -1971,7 +1984,8 @@ function App() {
         return;
       }
 
-      const directoryClient = clientDirectory.find((client) => normalizeClientName(client.client) === normalizeClientName(clientData.name));
+      const displayClientName = resolveDisplayClientName(clientData.name);
+      const directoryClient = clientDirectory.find((client) => normalizeClientName(client.client) === normalizeClientName(displayClientName));
       linkedClient = {
         ...(directoryClient ?? {
           lastMetricMonth: "Sem dados",
@@ -1980,11 +1994,11 @@ function App() {
           source: "Supabase",
           owner: clientData.social_media_group ?? "Equipe Look",
           ownerId: "cecilio",
-          metricClient: resolveMetricClientName(clientData.name)
+          metricClient: resolveMetricClientName(displayClientName)
         }),
-        id: slugFromClient(clientData.name),
+        id: slugFromClient(displayClientName),
         supabaseId: clientData.id,
-        client: clientData.name,
+        client: displayClientName,
         status: statusFromSupabase(clientData.status),
         access: statusFromSupabase(clientData.status) === "Ativo" ? "Liberado" : "Bloqueado"
       };
@@ -2212,6 +2226,22 @@ function App() {
 
   if (!area) {
     return <LoginGate onEnter={setArea} onLogin={handleLogin} authError={authError} authLoading={authLoading} />;
+  }
+
+  if (area === "client" && isSupabaseConfigured && !portalClient) {
+    return (
+      <main className="login-screen">
+        <section className="login-card">
+          <Logo />
+          <p className="eyebrow">Portal Look</p>
+          <h1>Cliente ainda não vinculado.</h1>
+          <p>Esse login entrou corretamente, mas ainda não encontramos qual cliente ele deve visualizar no Supabase.</p>
+          <button onClick={handleSignOut}>
+            <Lock size={17} /> Sair
+          </button>
+        </section>
+      </main>
+    );
   }
 
   return (
