@@ -2958,6 +2958,140 @@ input:focus-visible {
   white-space: nowrap;
 }
 
+/* Mapa de ações — canvas rico (admin) */
+
+.action-map-canvas-rich {
+  height: 34rem;
+}
+
+.action-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.9rem;
+  font-weight: 800;
+  cursor: grab;
+}
+
+.action-node:active {
+  cursor: grabbing;
+}
+
+.action-node-hub {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  width: 9.5rem;
+  min-height: 5.2rem;
+  padding: 0.6rem;
+  border-radius: 1.1rem;
+  background: #0b2439;
+  color: #fff;
+  text-align: center;
+  cursor: default;
+  box-shadow: 0 0.9rem 1.8rem rgba(11, 36, 57, 0.28);
+}
+
+.action-node-hub strong {
+  font-size: 0.82rem;
+}
+
+.action-node-hub span {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.action-node-category {
+  flex-direction: column;
+  justify-content: center;
+  width: 7.4rem;
+  min-height: 3.6rem;
+  padding: 0.5rem;
+  border-radius: 0.9rem;
+  background: var(--node-tint, #eef1fb);
+  border: 1.5px solid var(--node-color, #3457d5);
+  color: var(--node-color, #3457d5);
+  text-align: center;
+}
+
+.action-node-category strong {
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.action-node-item {
+  min-width: 6.4rem;
+  max-width: 9rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.6rem;
+  background: #fff;
+  border: 1.5px solid var(--node-color, #3457d5);
+  color: #26313a;
+  font-weight: 700;
+  font-size: 0.66rem;
+  line-height: 1.25;
+}
+
+.action-node-item span {
+  display: block;
+  word-break: break-word;
+}
+
+.action-node-item.editing {
+  padding: 0.2rem;
+  cursor: text;
+}
+
+.action-node-item.editing input {
+  width: 8rem;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  color: #26313a;
+  padding: 0.2rem 0.35rem;
+}
+
+.action-node-item.editing input:focus {
+  outline: none;
+}
+
+.action-node-remove {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  display: none;
+  place-items: center;
+  background: #fff;
+  color: #b3261e;
+  box-shadow: 0 0.2rem 0.5rem rgba(11, 36, 57, 0.2);
+}
+
+.action-node-item:hover .action-node-remove {
+  display: grid;
+}
+
+.action-node-add {
+  min-width: 5.6rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.6rem;
+  background: transparent;
+  border: 1.5px dashed var(--node-color, #3457d5);
+  color: var(--node-color, #3457d5);
+  font-size: 0.62rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.action-node-add:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
 /* Mapa de ações — admin */
 
 .action-map-admin {

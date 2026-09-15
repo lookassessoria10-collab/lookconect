@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus, Workflow, X } from "lucide-react";
+import { Workflow } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 import { resolveSupabaseClientId } from "./CommercialDashboard";
 import { ACTION_MAP_CATEGORIES } from "./actionMapCategories";
-import RadialActionCanvas from "./RadialActionCanvas";
+import ActionMapCanvas from "./ActionMapCanvas";
 
 function emptyItemsByCategory() {
   return Object.fromEntries(ACTION_MAP_CATEGORIES.map((category) => [category.key, []]));
@@ -11,18 +11,25 @@ function emptyItemsByCategory() {
 
 export async function fetchActionMap(clientSupabaseId) {
   const itemsByCategory = emptyItemsByCategory();
-  if (!supabase || !clientSupabaseId) return { title: "", subtitle: "", itemsByCategory };
+  if (!supabase || !clientSupabaseId) return { title: "", subtitle: "", layout: null, itemsByCategory };
 
   const [{ data: meta }, { data: items }] = await Promise.all([
-    supabase.from("action_maps").select("title, subtitle").eq("client_id", clientSupabaseId).maybeSingle(),
-    supabase.from("action_map_items").select("id, category, title, position").eq("client_id", clientSupabaseId).order("position", { ascending: true })
+    supabase.from("action_maps").select("title, subtitle, layout").eq("client_id", clientSupabaseId).maybeSingle(),
+    supabase.from("action_map_items").select("id, category, title, position, position_x, position_y").eq("client_id", clientSupabaseId).order("position", { ascending: true })
   ]);
 
   (items ?? []).forEach((item) => {
-    if (itemsByCategory[item.category]) itemsByCategory[item.category].push(item);
+    if (itemsByCategory[item.category]) {
+      itemsByCategory[item.category].push({
+        id: item.id,
+        title: item.title,
+        x: item.position_x,
+        y: item.position_y
+      });
+    }
   });
 
-  return { title: meta?.title ?? "", subtitle: meta?.subtitle ?? "", itemsByCategory };
+  return { title: meta?.title ?? "", subtitle: meta?.subtitle ?? "", layout: meta?.layout ?? null, itemsByCategory };
 }
 
 async function saveActionMapMeta(clientSupabaseId, { title, subtitle }) {
@@ -33,15 +40,33 @@ async function saveActionMapMeta(clientSupabaseId, { title, subtitle }) {
   );
 }
 
-async function addActionMapItem(clientSupabaseId, category, title, position) {
-  if (!supabase || !clientSupabaseId) return { id: `local-${Date.now()}`, category, title, position };
+async function saveActionMapLayout(clientSupabaseId, layout) {
+  if (!supabase || !clientSupabaseId) return;
+  await supabase.from("action_maps").upsert(
+    { client_id: clientSupabaseId, layout, updated_at: new Date().toISOString() },
+    { onConflict: "client_id" }
+  );
+}
+
+async function addActionMapItem(clientSupabaseId, category, title, position, x, y) {
+  if (!supabase || !clientSupabaseId) return { id: `local-${Date.now()}`, title, x, y };
   const { data, error } = await supabase
     .from("action_map_items")
-    .insert({ client_id: clientSupabaseId, category, title, position })
-    .select("id, category, title, position")
+    .insert({ client_id: clientSupabaseId, category, title, position, position_x: x, position_y: y })
+    .select("id, title, position_x, position_y")
     .single();
   if (error) throw new Error(error.message);
-  return data;
+  return { id: data.id, title: data.title, x: data.position_x, y: data.position_y };
+}
+
+async function renameActionMapItem(itemId, title) {
+  if (!supabase || String(itemId).startsWith("local-")) return;
+  await supabase.from("action_map_items").update({ title }).eq("id", itemId);
+}
+
+async function moveActionMapItem(itemId, x, y) {
+  if (!supabase || String(itemId).startsWith("local-")) return;
+  await supabase.from("action_map_items").update({ position_x: x, position_y: y }).eq("id", itemId);
 }
 
 async function removeActionMapItem(itemId) {
@@ -56,8 +81,8 @@ export function ActionMapEditor({ clients }) {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [itemsByCategory, setItemsByCategory] = useState(emptyItemsByCategory);
-  const [openCategory, setOpenCategory] = useState(null);
-  const [draftText, setDraftText] = useState("");
+  const [categoryLayout, setCategoryLayout] = useState(null);
+  const [autoEditId, setAutoEditId] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const selectedClient = activeClients.find((client) => client.id === selectedClientId) ?? activeClients[0];
@@ -76,6 +101,8 @@ export function ActionMapEditor({ clients }) {
       setTitle(map.title || `Ações para ${selectedClient.client}`);
       setSubtitle(map.subtitle);
       setItemsByCategory(map.itemsByCategory);
+      setCategoryLayout(map.layout);
+      setAutoEditId(null);
       setLoading(false);
     })();
 
@@ -84,33 +111,51 @@ export function ActionMapEditor({ clients }) {
     };
   }, [selectedClient?.id]);
 
-  const handleAddItem = async (categoryKey) => {
-    const text = draftText.trim();
-    if (!text || !selectedClient) return;
-
-    const position = itemsByCategory[categoryKey]?.length ?? 0;
-    const newItem = await addActionMapItem(supabaseClientId, categoryKey, text, position);
+  const handleAddItem = async (categoryKey, position) => {
+    if (!selectedClient) return;
+    const order = itemsByCategory[categoryKey]?.length ?? 0;
+    const newItem = await addActionMapItem(supabaseClientId, categoryKey, "", order, position.x, position.y);
     setItemsByCategory((current) => ({ ...current, [categoryKey]: [...current[categoryKey], newItem] }));
-    setDraftText("");
+    setAutoEditId(newItem.id);
   };
 
-  const handleRemoveItem = async (categoryKey, itemId) => {
-    await removeActionMapItem(itemId);
+  const handleRenameItem = (categoryKey, itemId, title) => {
+    renameActionMapItem(itemId, title);
+    setItemsByCategory((current) => ({
+      ...current,
+      [categoryKey]: current[categoryKey].map((item) => (item.id === itemId ? { ...item, title } : item))
+    }));
+    setAutoEditId((current) => (current === itemId ? null : current));
+  };
+
+  const handleDeleteItem = (categoryKey, itemId) => {
+    removeActionMapItem(itemId);
     setItemsByCategory((current) => ({ ...current, [categoryKey]: current[categoryKey].filter((item) => item.id !== itemId) }));
+    setAutoEditId((current) => (current === itemId ? null : current));
+  };
+
+  const handleMoveItem = (itemId, x, y) => {
+    moveActionMapItem(itemId, x, y);
+    setItemsByCategory((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(next)) {
+        next[key] = next[key].map((item) => (item.id === itemId ? { ...item, x, y } : item));
+      }
+      return next;
+    });
+  };
+
+  const handleMoveCategory = (categoryKey, x, y) => {
+    setCategoryLayout((current) => {
+      const next = { ...(current ?? {}), [categoryKey]: { x, y } };
+      saveActionMapLayout(supabaseClientId, next);
+      return next;
+    });
   };
 
   const handleMetaBlur = () => {
     if (selectedClient) saveActionMapMeta(supabaseClientId, { title, subtitle });
   };
-
-  const canvasCategories = ACTION_MAP_CATEGORIES.map((category) => ({
-    ...category,
-    count: itemsByCategory[category.key]?.length ?? 0,
-    onOpen: () => setOpenCategory(category.key)
-  }));
-
-  const activeCategory = ACTION_MAP_CATEGORIES.find((category) => category.key === openCategory);
-  const activeItems = activeCategory ? itemsByCategory[activeCategory.key] ?? [] : [];
 
   return (
     <div className="action-map-admin">
@@ -118,7 +163,7 @@ export function ActionMapEditor({ clients }) {
         <div>
           <p className="eyebrow">Cliente do mapa</p>
           <h3>{selectedClient?.client ?? "Nenhum cliente ativo"}</h3>
-          <span>{loading ? "Carregando..." : "Clique em uma categoria no mapa para adicionar ou remover itens."}</span>
+          <span>{loading ? "Carregando..." : "Arraste os nós para reorganizar. Clique em \"Novo item\" ou dê duplo clique em um item para editar."}</span>
         </div>
         <label>
           <span>Escolher cliente</span>
@@ -141,45 +186,19 @@ export function ActionMapEditor({ clients }) {
         </label>
       </section>
 
-      <RadialActionCanvas hubTitle={selectedClient?.client?.split(" ")[0] ?? "Cliente"} hubSubtitle={subtitle || "Mapa de ações"} categories={canvasCategories} />
-
-      {activeCategory && (
-        <div className="actions-map-backdrop" onClick={() => setOpenCategory(null)}>
-          <aside className="actions-map-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="actions-map-panel-head">
-              <div>
-                <span className="actions-map-dot" style={{ background: activeCategory.color }} />
-                <strong>{activeCategory.label}</strong>
-              </div>
-              <button onClick={() => setOpenCategory(null)} aria-label="Fechar">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="actions-map-panel-list editable">
-              {activeItems.length ? activeItems.map((item) => (
-                <div key={item.id}>
-                  <strong>{item.title}</strong>
-                  <button type="button" className="actions-map-item-remove" onClick={() => handleRemoveItem(activeCategory.key, item.id)} aria-label={`Remover ${item.title}`}>
-                    <X size={14} />
-                  </button>
-                </div>
-              )) : (
-                <div className="actions-map-empty">Nenhum item nesta dimensão ainda.</div>
-              )}
-            </div>
-            <form
-              className="actions-map-add-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleAddItem(activeCategory.key);
-              }}
-            >
-              <input value={draftText} onChange={(event) => setDraftText(event.target.value)} placeholder="Adicionar item..." />
-              <button type="submit"><Plus size={15} /> Adicionar</button>
-            </form>
-          </aside>
-        </div>
-      )}
+      <ActionMapCanvas
+        key={selectedClient?.id}
+        hubTitle={selectedClient?.client?.split(" ")[0] ?? "Cliente"}
+        hubSubtitle={subtitle || "Mapa de ações"}
+        itemsByCategory={itemsByCategory}
+        categoryLayout={categoryLayout}
+        autoEditId={autoEditId}
+        onAddItem={handleAddItem}
+        onRenameItem={handleRenameItem}
+        onDeleteItem={handleDeleteItem}
+        onMoveItem={handleMoveItem}
+        onMoveCategory={handleMoveCategory}
+      />
     </div>
   );
 }

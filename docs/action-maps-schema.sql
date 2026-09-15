@@ -14,6 +14,7 @@ create table if not exists public.action_maps (
   client_id uuid primary key references public.clients(id) on delete cascade,
   title text not null default '',
   subtitle text,
+  layout jsonb,
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users(id)
 );
@@ -26,6 +27,8 @@ create table if not exists public.action_map_items (
   )),
   title text not null,
   position integer not null default 0,
+  position_x double precision,
+  position_y double precision,
   created_at timestamptz not null default now(),
   created_by uuid references auth.users(id)
 );
