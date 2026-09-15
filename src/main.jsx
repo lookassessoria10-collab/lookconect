@@ -22,6 +22,7 @@ import {
   MessageSquareText,
   PanelLeftClose,
   Paperclip,
+  PieChart,
   Plus,
   Search,
   Send,
@@ -35,6 +36,8 @@ import {
 } from "lucide-react";
 import { metricMonths, socialMetricMonthlyRows } from "./metricsData";
 import { isSupabaseConfigured, supabase } from "./supabaseClient";
+import ActionsMap from "./ActionsMap";
+import { CommercialDashboardAdmin, CommercialDashboardClient, fetchCommercialDashboard, resolveSupabaseClientId, saveCommercialDashboard } from "./CommercialDashboard";
 import "./styles.css";
 
 const clients = [
@@ -131,6 +134,7 @@ const adminViews = [
   ["planejamento", "Planejamento", CalendarDays],
   ["metricas", "Análise de métricas", BarChart3],
   ["trafego", "Tráfego pago", CircleDollarSign],
+  ["dashboard-comercial", "Dashboard comercial", PieChart],
   ["relatorios", "Relatórios", FileText],
   ["integracoes", "Integrações", Settings2]
 ];
@@ -728,7 +732,7 @@ function TrafficAdminPanel({ report, onUpload, openModal, clients, selectedClien
   );
 }
 
-function ClientSection({ view, openModal, posts, fullPosts, actions, trafficReport }) {
+function ClientSection({ view, openModal, posts, fullPosts, actions, trafficReport, client, commercialDashboard }) {
   if (view === "trafego") {
     return (
       <section className="white-panel detail-panel">
@@ -737,12 +741,15 @@ function ClientSection({ view, openModal, posts, fullPosts, actions, trafficRepo
     );
   }
 
+  if (view === "acoes") {
+    return <ActionsMap client={client} actions={actions} fullPosts={fullPosts} trafficReport={trafficReport} />;
+  }
+
+  if (view === "dashboard-comercial") {
+    return <CommercialDashboardClient client={client} dashboard={commercialDashboard} />;
+  }
+
   const content = {
-    acoes: {
-      title: "Ações estratégicas",
-      intro: "O que a equipe Look está conduzindo para melhorar captação, atendimento e conversão.",
-      items: actions.map((item) => `${item.label} - ${item.value}% concluído`)
-    },
     planejamento: {
       title: "Planejamento do mês",
       intro: "Conteúdos, campanhas e entregas organizados em uma visão única.",
@@ -814,7 +821,7 @@ function BottomNav({ active, setActive }) {
   );
 }
 
-function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, actions, syncState, trafficReport, client }) {
+function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, actions, syncState, trafficReport, client, commercialDashboard }) {
   const openItem = (item) => openModal("detail", item);
   const openFullPlanning = () => openModal("fullPlanning", { posts: fullPosts, client: client?.client });
   const nextPost = posts[0];
@@ -855,7 +862,7 @@ function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, 
             </aside>
           </div>
         ) : (
-          <ClientSection view={active} openModal={openModal} posts={posts} fullPosts={fullPosts} actions={actions} trafficReport={trafficReport} />
+          <ClientSection view={active} openModal={openModal} posts={posts} fullPosts={fullPosts} actions={actions} trafficReport={trafficReport} client={client} commercialDashboard={commercialDashboard} />
         )}
       </main>
       <BottomNav active={active} setActive={setActive} />
@@ -1336,7 +1343,7 @@ function IntegrationsPanel({ syncState, onSync, openModal, clients, selectedClie
   );
 }
 
-function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange }) {
+function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange, commercialDashboardsByClient, onSaveCommercialDashboard }) {
   if (active === "visao") {
     return <AdminOverview openModal={openModal} setActive={setActive} syncState={syncState} clientDirectory={clientDirectory} />;
   }
@@ -1368,6 +1375,12 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
       action: "Subir PDF",
       body: <TrafficAdminPanel report={trafficReport} onUpload={onTrafficUpload} openModal={openModal} clients={clientDirectory} selectedClientId={selectedTrafficClientId} onClientChange={onTrafficClientChange} />
     },
+    "dashboard-comercial": {
+      title: "Dashboard comercial",
+      intro: "Publique o HTML do dashboard comercial de cada cliente. Cada um pode ter seções diferentes, mas aparece dentro do mesmo padrão visual do portal.",
+      hideAction: true,
+      body: <CommercialDashboardAdmin clients={clientDirectory} dashboardsByClient={commercialDashboardsByClient} onSave={onSaveCommercialDashboard} />
+    },
     relatorios: {
       title: "Relatórios",
       intro: "Publique análises semanais e mensais para cada cliente.",
@@ -1390,9 +1403,11 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
           <h2>{views.title}</h2>
           <p>{views.intro}</p>
         </div>
-        <button className="primary-admin" onClick={active === "integracoes" ? () => onSync(selectedSyncClient) : () => active === "trafego" ? document.getElementById("traffic-pdf-upload")?.click() : active === "metricas" ? openModal("metricImport") : active === "clientes" ? onCreateClient() : openModal("published")}>
-          <Plus size={17} /> {views.action}
-        </button>
+        {!views.hideAction && (
+          <button className="primary-admin" onClick={active === "integracoes" ? () => onSync(selectedSyncClient) : () => active === "trafego" ? document.getElementById("traffic-pdf-upload")?.click() : active === "metricas" ? openModal("metricImport") : active === "clientes" ? onCreateClient() : openModal("published")}>
+            <Plus size={17} /> {views.action}
+          </button>
+        )}
       </div>
       {views.body}
     </section>
@@ -1455,7 +1470,7 @@ function AdminAccessPanel({ activeAdminId, onAdminChange, allClients, visibleCli
   );
 }
 
-function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, currentProfile, currentAdminId, onAdminChange, onSignOut, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange }) {
+function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, currentProfile, currentAdminId, onAdminChange, onSignOut, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange, commercialDashboardsByClient, onSaveCommercialDashboard }) {
   const [active, setActive] = useState("visao");
   const activeAdminId = currentAdminId ?? "cecilio";
   const pageTitle = adminViews.find(([key]) => key === active)?.[1] ?? "Visão geral";
@@ -1501,6 +1516,8 @@ function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUplo
           onTrafficClientChange={onTrafficClientChange}
           selectedSyncClientId={selectedSyncClientId}
           onSyncClientChange={onSyncClientChange}
+          commercialDashboardsByClient={commercialDashboardsByClient}
+          onSaveCommercialDashboard={onSaveCommercialDashboard}
         />
       </main>
     </div>
@@ -1791,12 +1808,13 @@ function ActionChoices() {
   );
 }
 
-function SideMenu({ active, setActive, onClose, client }) {
+function SideMenu({ active, setActive, onClose, client, switchLabel, onSwitch }) {
   const items = [
     ["inicio", "Início", Home],
     ["acoes", "Ações", Layers3],
     ["planejamento", "Planejamento", ClipboardList],
     ["trafego", "Tráfego", BarChart3],
+    ["dashboard-comercial", "Dashboard comercial", PieChart],
     ["aprovacoes", "Aprovações", Check],
     ["arquivos", "Arquivos", FolderOpen]
   ];
@@ -1828,6 +1846,19 @@ function SideMenu({ active, setActive, onClose, client }) {
             </button>
           ))}
         </nav>
+        {onSwitch && (
+          <div className="drawer-footer">
+            <button
+              className="drawer-signout"
+              onClick={() => {
+                onClose();
+                onSwitch();
+              }}
+            >
+              <Lock size={15} /> {switchLabel}
+            </button>
+          </div>
+        )}
       </aside>
     </div>
   );
@@ -1905,6 +1936,7 @@ function App() {
   const [currentAdminId, setCurrentAdminId] = useState("cecilio");
   const [syncStatesByClient, setSyncStatesByClient] = useState({});
   const [selectedSyncClientId, setSelectedSyncClientId] = useState(slugFromClient(defaultTrafficReport.client));
+  const [commercialDashboardsByClient, setCommercialDashboardsByClient] = useState({});
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [authError, setAuthError] = useState("");
 
@@ -1919,6 +1951,7 @@ function App() {
   const portalClient = currentClient ?? fallbackClient;
   const portalClientId = portalClient?.id ?? slugFromClient("Lucas Fraga");
   const clientTrafficReport = trafficReportsByClient[portalClientId] ?? buildTrafficReportForClient(portalClient?.client ?? "Cliente Look");
+  const portalCommercialDashboard = commercialDashboardsByClient[portalClientId] ?? null;
   const syncVisibleClients = filterClientsForAdmin(clientDirectory, currentAdminId).filter((client) => client.status === "Ativo");
   const selectedSyncClient = syncVisibleClients.find((client) => client.id === selectedSyncClientId) ?? syncVisibleClients[0] ?? clientDirectory[0];
   const activeSyncClientId = selectedSyncClient?.id ?? selectedSyncClientId;
@@ -2093,6 +2126,36 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!supabase || !portalClient?.supabaseId || commercialDashboardsByClient[portalClientId]) return undefined;
+
+    let mounted = true;
+
+    fetchCommercialDashboard(portalClient.supabaseId).then((dashboard) => {
+      if (!mounted || !dashboard) return;
+      setCommercialDashboardsByClient((current) => ({ ...current, [portalClientId]: dashboard }));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [portalClient?.supabaseId, portalClientId]);
+
+  const handleSaveCommercialDashboard = async (client, html) => {
+    if (isSupabaseConfigured) {
+      const supabaseClientId = client.supabaseId ?? (await resolveSupabaseClientId(client.client));
+      if (!supabaseClientId) {
+        throw new Error(`Cliente "${client.client}" ainda não está cadastrado no Supabase.`);
+      }
+      await saveCommercialDashboard(supabaseClientId, html);
+    }
+
+    setCommercialDashboardsByClient((current) => ({
+      ...current,
+      [client.id]: { html, updatedAtLabel: "publicado agora" }
+    }));
+  };
+
   const handleClientStatusChange = (clientId, status) => {
     setClientDirectory((current) => current.map((client) => (
       client.id === clientId
@@ -2223,6 +2286,7 @@ function App() {
   const label = useMemo(() => area === "admin" ? "Ver área do cliente" : "Ver painel ADM", [area]);
 
   const switchLabel = isSupabaseConfigured ? "Sair" : label;
+  const handleAreaSwitch = isSupabaseConfigured ? handleSignOut : () => setArea(area === "admin" ? "client" : "admin");
 
   if (!area) {
     return <LoginGate onEnter={setArea} onLogin={handleLogin} authError={authError} authLoading={authLoading} />;
@@ -2246,7 +2310,7 @@ function App() {
 
   return (
     <div className="app">
-      <button className="area-switch" onClick={isSupabaseConfigured ? handleSignOut : () => setArea(area === "admin" ? "client" : "admin")}>
+      <button className="area-switch" onClick={handleAreaSwitch}>
         {switchLabel}
       </button>
       {area === "admin" ? (
@@ -2267,6 +2331,8 @@ function App() {
           onTrafficClientChange={setSelectedTrafficClientId}
           selectedSyncClientId={activeSyncClientId}
           onSyncClientChange={setSelectedSyncClientId}
+          commercialDashboardsByClient={commercialDashboardsByClient}
+          onSaveCommercialDashboard={handleSaveCommercialDashboard}
         />
       ) : (
         <ClientArea
@@ -2278,12 +2344,22 @@ function App() {
           fullPosts={fullPlanningPosts}
           actions={portalActions}
           syncState={clientSyncState}
+          commercialDashboard={portalCommercialDashboard}
           trafficReport={clientTrafficReport}
           client={portalClient}
         />
       )}
       {modal && <Modal type={modal.type} data={modal.data} onClose={() => setModal(null)} />}
-      {menu && <SideMenu active={clientView} setActive={setClientView} onClose={() => setMenu(false)} client={portalClient} />}
+      {menu && (
+        <SideMenu
+          active={clientView}
+          setActive={setClientView}
+          onClose={() => setMenu(false)}
+          client={portalClient}
+          switchLabel={switchLabel}
+          onSwitch={handleAreaSwitch}
+        />
+      )}
     </div>
   );
 }

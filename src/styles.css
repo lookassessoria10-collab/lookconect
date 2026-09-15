@@ -28,6 +28,16 @@ input {
 button {
   border: 0;
   cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease, opacity 150ms ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 button:focus-visible,
@@ -106,6 +116,12 @@ input:focus-visible {
   background: #38d88e;
 }
 
+.login-actions button:hover,
+.login-form button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.7rem 1.5rem rgba(0, 0, 0, 0.22);
+}
+
 .login-form {
   display: grid;
   gap: 0.85rem;
@@ -171,6 +187,11 @@ input:focus-visible {
   box-shadow: 0 0.7rem 1.7rem rgba(7, 25, 40, 0.18);
 }
 
+.area-switch:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.9rem 2rem rgba(7, 25, 40, 0.26);
+}
+
 .client-shell {
   position: relative;
   width: min(100%, 31rem);
@@ -223,6 +244,16 @@ input:focus-visible {
 
 .icon-button.ghost {
   background: transparent;
+  box-shadow: none;
+}
+
+.icon-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.6rem 1.3rem rgba(19, 49, 71, 0.16);
+}
+
+.icon-button.ghost:hover {
+  background: rgba(11, 36, 57, 0.06);
   box-shadow: none;
 }
 
@@ -333,6 +364,13 @@ input:focus-visible {
   padding: 0 1.1rem;
 }
 
+.primary-light:hover,
+.primary-wide:hover,
+.primary-admin:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.7rem 1.5rem rgba(11, 36, 57, 0.22);
+}
+
 .secondary-admin {
   min-height: 2.65rem;
   padding: 0 1rem;
@@ -341,6 +379,10 @@ input:focus-visible {
   color: #0b486c;
   font-size: 0.78rem;
   font-weight: 850;
+}
+
+.secondary-admin:hover {
+  background: #e0eef2;
 }
 
 .ring {
@@ -532,6 +574,10 @@ input:focus-visible {
   background: #fff;
   color: #0b2439;
   box-shadow: 0 0.3rem 0.8rem rgba(12, 37, 55, 0.07);
+}
+
+.tabs button:not(.active):hover {
+  color: #0b2439;
 }
 
 .post-list {
@@ -1094,6 +1140,10 @@ input:focus-visible {
   color: #0b2439;
 }
 
+.bottom-nav button:not(.active):not(:nth-child(3)):hover {
+  color: #435463;
+}
+
 .bottom-nav button:nth-child(3) svg {
   width: 2.8rem;
   height: 2.8rem;
@@ -1421,6 +1471,8 @@ input:focus-visible {
   background: #061b2e;
   color: #fff;
   box-shadow: 1rem 0 2.5rem rgba(2, 15, 25, 0.26);
+  display: flex;
+  flex-direction: column;
 }
 
 .drawer-top {
@@ -1473,6 +1525,36 @@ input:focus-visible {
 .drawer nav button.active,
 .admin-sidebar nav button.active {
   background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.drawer nav button:not(.active):hover,
+.admin-sidebar nav button:not(.active):hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.drawer-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.drawer-signout {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.drawer-signout:hover {
+  background: rgba(255, 255, 255, 0.14);
   color: #fff;
 }
 
@@ -1995,6 +2077,10 @@ input:focus-visible {
   border-radius: 50%;
   background: #eef4f6;
   color: #0b2439;
+}
+
+.round-action:hover {
+  background: #e0eef2;
 }
 
 .admin-section {
@@ -2626,6 +2712,275 @@ input:focus-visible {
   line-height: 1.35;
 }
 
+/* Mapa de ações */
+
+.actions-map-card {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.actions-map-hint {
+  margin: -0.2rem 0 0;
+}
+
+.actions-map-canvas {
+  position: relative;
+  height: 22rem;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #fafcfd;
+  border: 1px solid rgba(11, 36, 57, 0.07);
+}
+
+.map-hub-node {
+  position: relative;
+  display: grid;
+  gap: 0.15rem;
+  place-items: center;
+  width: 7.5rem;
+  height: 7.5rem;
+  border-radius: 50%;
+  background: #0b2439;
+  color: #fff;
+  text-align: center;
+  padding: 0.5rem;
+  box-shadow: 0 0.8rem 1.6rem rgba(11, 36, 57, 0.28);
+}
+
+.map-hub-node strong {
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.map-hub-node span {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.map-category-node {
+  position: relative;
+  display: grid;
+  gap: 0.1rem;
+  place-items: center;
+  width: 6.6rem;
+  height: 6.6rem;
+  border-radius: 1.4rem;
+  background: var(--node-color, #3457d5);
+  color: #fff;
+  text-align: center;
+  padding: 0.5rem;
+  border: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 0.6rem 1.3rem rgba(11, 36, 57, 0.18);
+}
+
+.map-category-node:hover,
+.map-category-node:focus-visible {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 0.9rem 1.7rem rgba(11, 36, 57, 0.26);
+}
+
+.map-category-node strong {
+  font-size: 0.76rem;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.map-category-node span {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.actions-map-canvas .react-flow__controls {
+  box-shadow: 0 0.4rem 1rem rgba(11, 36, 57, 0.12);
+  border-radius: 0.7rem;
+  overflow: hidden;
+}
+
+.actions-map-canvas .react-flow__controls-button {
+  background: #fff;
+  border-bottom: 1px solid rgba(11, 36, 57, 0.08);
+}
+
+.actions-map-canvas .react-flow__attribution {
+  font-size: 0.55rem;
+}
+
+.actions-map-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(8, 21, 32, 0.45);
+}
+
+.actions-map-panel {
+  width: min(22rem, 100%);
+  height: 100%;
+  background: #fff;
+  padding: 1.2rem;
+  overflow-y: auto;
+  box-shadow: -1rem 0 2.5rem rgba(2, 15, 25, 0.2);
+}
+
+.actions-map-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(11, 36, 57, 0.08);
+}
+
+.actions-map-panel-head > div {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.actions-map-panel-head strong {
+  font-size: 0.95rem;
+}
+
+.actions-map-panel-head button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #eef4f6;
+  color: #0b2439;
+}
+
+.actions-map-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.actions-map-panel-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.actions-map-panel-list > div {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  background: #f7fbfc;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.actions-map-panel-list strong {
+  font-size: 0.82rem;
+}
+
+.actions-map-panel-list span {
+  font-size: 0.72rem;
+  color: #718492;
+}
+
+.actions-map-empty {
+  padding: 0.9rem;
+  color: #718492;
+  font-size: 0.8rem;
+}
+
+/* Dashboard comercial */
+
+.commercial-dashboard-frame {
+  width: 100%;
+  border: 0;
+  border-radius: 0.9rem;
+  background: #fff;
+  display: block;
+}
+
+.commercial-dashboard-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.commercial-dashboard-admin {
+  display: grid;
+  gap: 1rem;
+}
+
+.commercial-dashboard-editor {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #f7fbfc;
+  border: 1px solid rgba(11, 36, 57, 0.06);
+}
+
+.commercial-dashboard-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.commercial-dashboard-textarea {
+  width: 100%;
+  min-height: 12rem;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(11, 36, 57, 0.12);
+  background: #fff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.commercial-dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.commercial-dashboard-actions .primary-wide {
+  width: auto;
+  padding: 0 1.2rem;
+}
+
+.commercial-dashboard-status {
+  font-size: 0.76rem;
+  font-weight: 750;
+  color: #718492;
+}
+
+.commercial-dashboard-status.success {
+  color: #16744c;
+}
+
+.commercial-dashboard-status.error {
+  color: #b3261e;
+}
+
+.commercial-dashboard-preview {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.spin {
+  animation: look-spin 0.9s linear infinite;
+}
+
+@keyframes look-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (min-width: 760px) {
   .client-shell {
     margin: 2rem auto;
@@ -2755,6 +3110,10 @@ input:focus-visible {
 
   .mini-card {
     min-height: 4.9rem;
+  }
+
+  .actions-map-canvas {
+    height: 30rem;
   }
 
   .white-panel,
@@ -2915,9 +3274,7 @@ input:focus-visible {
   }
 
   .area-switch {
-    top: auto;
-    right: 1rem;
-    bottom: 1rem;
+    display: none;
   }
 }
 
