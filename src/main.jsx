@@ -25,18 +25,20 @@ import {
   PieChart,
   Plus,
   Search,
-  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
   RefreshCw,
   Upload,
   Users,
+  Workflow,
   X
 } from "lucide-react";
 import { metricMonths, socialMetricMonthlyRows } from "./metricsData";
 import { isSupabaseConfigured, supabase } from "./supabaseClient";
 import ActionsMap from "./ActionsMap";
+import { ActionMapEditor, ActionMapOverview, fetchActionMap } from "./ActionMapAdmin";
+import { actionMapToCategories } from "./actionMapCategories";
 import { CommercialDashboardAdmin, CommercialDashboardClient, fetchCommercialDashboard, resolveSupabaseClientId, saveCommercialDashboard } from "./CommercialDashboard";
 import "./styles.css";
 
@@ -131,13 +133,19 @@ function buildTrafficReportForClient(clientName) {
 const adminViews = [
   ["visao", "Visão geral", Home],
   ["clientes", "Clientes", Users],
-  ["planejamento", "Planejamento", CalendarDays],
+  ["mapa-acoes", "Mapa de ações", Workflow],
   ["metricas", "Análise de métricas", BarChart3],
   ["trafego", "Tráfego pago", CircleDollarSign],
   ["dashboard-comercial", "Dashboard comercial", PieChart],
-  ["relatorios", "Relatórios", FileText],
   ["integracoes", "Integrações", Settings2]
 ];
+
+// "dashboard-comercial" só aparece para o ADM geral (Cecilio); os demais itens
+// (fora clientes/visão geral, sempre visíveis) valem para qualquer admin.
+function adminViewsForAdmin(adminId) {
+  if (adminId === "cecilio") return adminViews;
+  return adminViews.filter(([key]) => key !== "dashboard-comercial");
+}
 
 const socialMetricRows = [
   { client: "A VIA DA CONSCIÊNCIA", monthsFilled: 3, lastMonth: "AGOSTO", followers: 232, newFollowers: 2, reach: 22, views: 0, engagement: 10, interactions: 0, linkTaps: null, access: "Ativo" },
@@ -732,7 +740,7 @@ function TrafficAdminPanel({ report, onUpload, openModal, clients, selectedClien
   );
 }
 
-function ClientSection({ view, openModal, posts, fullPosts, actions, trafficReport, client, commercialDashboard }) {
+function ClientSection({ view, openModal, posts, fullPosts, actions, trafficReport, client, commercialDashboard, actionMap }) {
   if (view === "trafego") {
     return (
       <section className="white-panel detail-panel">
@@ -742,7 +750,7 @@ function ClientSection({ view, openModal, posts, fullPosts, actions, trafficRepo
   }
 
   if (view === "acoes") {
-    return <ActionsMap client={client} actions={actions} fullPosts={fullPosts} trafficReport={trafficReport} />;
+    return <ActionsMap client={client} actions={actions} fullPosts={fullPosts} trafficReport={trafficReport} mapOverride={actionMap} />;
   }
 
   if (view === "dashboard-comercial") {
@@ -821,7 +829,7 @@ function BottomNav({ active, setActive }) {
   );
 }
 
-function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, actions, syncState, trafficReport, client, commercialDashboard }) {
+function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, actions, syncState, trafficReport, client, commercialDashboard, actionMap }) {
   const openItem = (item) => openModal("detail", item);
   const openFullPlanning = () => openModal("fullPlanning", { posts: fullPosts, client: client?.client });
   const nextPost = posts[0];
@@ -862,7 +870,7 @@ function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, 
             </aside>
           </div>
         ) : (
-          <ClientSection view={active} openModal={openModal} posts={posts} fullPosts={fullPosts} actions={actions} trafficReport={trafficReport} client={client} commercialDashboard={commercialDashboard} />
+          <ClientSection view={active} openModal={openModal} posts={posts} fullPosts={fullPosts} actions={actions} trafficReport={trafficReport} client={client} commercialDashboard={commercialDashboard} actionMap={actionMap} />
         )}
       </main>
       <BottomNav active={active} setActive={setActive} />
@@ -870,12 +878,12 @@ function ClientArea({ active, setActive, openModal, openMenu, posts, fullPosts, 
   );
 }
 
-function AdminSidebar({ active, setActive }) {
+function AdminSidebar({ active, setActive, activeAdminId }) {
   return (
     <aside className="admin-sidebar">
       <Logo />
       <nav>
-        {adminViews.map(([key, label, Icon]) => (
+        {adminViewsForAdmin(activeAdminId).map(([key, label, Icon]) => (
           <button key={key} className={active === key ? "active" : ""} onClick={() => setActive(key)}>
             <Icon size={17} /> {label}
           </button>
@@ -1343,7 +1351,7 @@ function IntegrationsPanel({ syncState, onSync, openModal, clients, selectedClie
   );
 }
 
-function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange, commercialDashboardsByClient, onSaveCommercialDashboard }) {
+function AdminContent({ active, openModal, setActive, syncState, onSync, trafficReport, onTrafficUpload, clientDirectory, onClientStatusChange, onCreateClient, selectedTrafficClientId, onTrafficClientChange, selectedSyncClientId, onSyncClientChange, commercialDashboardsByClient, onSaveCommercialDashboard, activeAdminId }) {
   if (active === "visao") {
     return <AdminOverview openModal={openModal} setActive={setActive} syncState={syncState} clientDirectory={clientDirectory} />;
   }
@@ -1357,11 +1365,15 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
       action: "Novo cliente",
       body: <ClientDirectoryPanel clients={clientDirectory} openModal={openModal} onClientStatusChange={onClientStatusChange} />
     },
-    planejamento: {
-      title: "Planejamento de conteúdo",
-      intro: "Organize entregas, status de aprovação e calendário mensal.",
-      action: "Adicionar conteúdo",
-      body: <AdminList items={["Carrossel em revisão", "Reels em produção", "Stories aprovados", "Calendário de setembro em rascunho"]} openModal={openModal} />
+    "mapa-acoes": {
+      title: "Mapa de ações",
+      intro: activeAdminId === "cecilio"
+        ? "Acompanhe o andamento das ações de cada cliente em um só lugar."
+        : "Crie e edite o mapa de ações de cada cliente da sua carteira.",
+      hideAction: true,
+      body: activeAdminId === "cecilio"
+        ? <ActionMapOverview clients={clientDirectory} />
+        : <ActionMapEditor clients={clientDirectory} />
     },
     metricas: {
       title: "Análise de métricas",
@@ -1380,12 +1392,6 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
       intro: "Publique o HTML do dashboard comercial de cada cliente. Cada um pode ter seções diferentes, mas aparece dentro do mesmo padrão visual do portal.",
       hideAction: true,
       body: <CommercialDashboardAdmin clients={clientDirectory} dashboardsByClient={commercialDashboardsByClient} onSave={onSaveCommercialDashboard} />
-    },
-    relatorios: {
-      title: "Relatórios",
-      intro: "Publique análises semanais e mensais para cada cliente.",
-      action: "Novo relatório",
-      body: <AdminList items={["Relatório semanal - Lucas Fraga", "Resumo mensal - Clínica Serena", "Análise de ROI - Odonto Prime"]} openModal={openModal} />
     },
     integracoes: {
       title: "Integrações",
@@ -1411,23 +1417,6 @@ function AdminContent({ active, openModal, setActive, syncState, onSync, traffic
       </div>
       {views.body}
     </section>
-  );
-}
-
-function AdminList({ items, openModal }) {
-  return (
-    <div className="admin-list">
-      {items.map((item) => (
-        <button key={item} onClick={() => openModal("task", { title: item })}>
-          <span>{item}</span>
-          <div>
-            <Eye size={16} />
-            <Edit3 size={16} />
-            <Send size={16} />
-          </div>
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -1476,9 +1465,15 @@ function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUplo
   const pageTitle = adminViews.find(([key]) => key === active)?.[1] ?? "Visão geral";
   const visibleClients = useMemo(() => filterClientsForAdmin(clientDirectory, activeAdminId), [clientDirectory, activeAdminId]);
 
+  useEffect(() => {
+    if (!adminViewsForAdmin(activeAdminId).some(([key]) => key === active)) {
+      setActive("visao");
+    }
+  }, [activeAdminId, active]);
+
   return (
     <div className="admin-shell">
-      <AdminSidebar active={active} setActive={setActive} />
+      <AdminSidebar active={active} setActive={setActive} activeAdminId={activeAdminId} />
       <main className="admin-main">
         <header className="admin-header">
           <div>
@@ -1518,6 +1513,7 @@ function AdminPanel({ openModal, syncState, onSync, trafficReport, onTrafficUplo
           onSyncClientChange={onSyncClientChange}
           commercialDashboardsByClient={commercialDashboardsByClient}
           onSaveCommercialDashboard={onSaveCommercialDashboard}
+          activeAdminId={activeAdminId}
         />
       </main>
     </div>
@@ -1937,6 +1933,7 @@ function App() {
   const [syncStatesByClient, setSyncStatesByClient] = useState({});
   const [selectedSyncClientId, setSelectedSyncClientId] = useState(slugFromClient(defaultTrafficReport.client));
   const [commercialDashboardsByClient, setCommercialDashboardsByClient] = useState({});
+  const [actionMapsByClient, setActionMapsByClient] = useState({});
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [authError, setAuthError] = useState("");
 
@@ -1952,6 +1949,7 @@ function App() {
   const portalClientId = portalClient?.id ?? slugFromClient("Lucas Fraga");
   const clientTrafficReport = trafficReportsByClient[portalClientId] ?? buildTrafficReportForClient(portalClient?.client ?? "Cliente Look");
   const portalCommercialDashboard = commercialDashboardsByClient[portalClientId] ?? null;
+  const portalActionMap = actionMapsByClient[portalClientId] ?? null;
   const syncVisibleClients = filterClientsForAdmin(clientDirectory, currentAdminId).filter((client) => client.status === "Ativo");
   const selectedSyncClient = syncVisibleClients.find((client) => client.id === selectedSyncClientId) ?? syncVisibleClients[0] ?? clientDirectory[0];
   const activeSyncClientId = selectedSyncClient?.id ?? selectedSyncClientId;
@@ -2134,6 +2132,23 @@ function App() {
     fetchCommercialDashboard(portalClient.supabaseId).then((dashboard) => {
       if (!mounted || !dashboard) return;
       setCommercialDashboardsByClient((current) => ({ ...current, [portalClientId]: dashboard }));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [portalClient?.supabaseId, portalClientId]);
+
+  useEffect(() => {
+    if (!supabase || !portalClient?.supabaseId || actionMapsByClient[portalClientId]) return undefined;
+
+    let mounted = true;
+
+    fetchActionMap(portalClient.supabaseId).then((map) => {
+      if (!mounted) return;
+      const converted = actionMapToCategories(map);
+      if (!converted) return;
+      setActionMapsByClient((current) => ({ ...current, [portalClientId]: converted }));
     });
 
     return () => {
@@ -2345,6 +2360,7 @@ function App() {
           actions={portalActions}
           syncState={clientSyncState}
           commercialDashboard={portalCommercialDashboard}
+          actionMap={portalActionMap}
           trafficReport={clientTrafficReport}
           client={portalClient}
         />
