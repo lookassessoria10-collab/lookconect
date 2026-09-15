@@ -20,6 +20,25 @@ export function categoryTint(key) {
   return ACTION_MAP_CATEGORIES.find((category) => category.key === key)?.tint ?? "#eef1fb";
 }
 
+// Formato da ação, conforme a seção "Tipos de ação e modelos iniciais" da
+// especificação do Mapa de Ações Look.
+export const ACTION_ITEM_TYPES = [
+  { key: "conteudo", label: "Conteúdo", icon: "FileText" },
+  { key: "midia", label: "Mídia", icon: "Megaphone" },
+  { key: "relacionamento", label: "Relacionamento", icon: "Heart" },
+  { key: "comercial", label: "Comercial", icon: "Briefcase" },
+  { key: "imprensa", label: "Imprensa", icon: "Newspaper" },
+  { key: "evento", label: "Evento", icon: "CalendarDays" },
+  { key: "parceria", label: "Parceria", icon: "Handshake" },
+  { key: "material_fisico", label: "Material físico", icon: "Package" },
+  { key: "digital", label: "Digital", icon: "Globe" },
+  { key: "institucional", label: "Institucional", icon: "Building2" }
+];
+
+export function itemTypeLabel(key) {
+  return ACTION_ITEM_TYPES.find((type) => type.key === key)?.label ?? null;
+}
+
 export function actionMapToCategories(map) {
   if (!map) return null;
 

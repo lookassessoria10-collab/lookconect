@@ -2964,6 +2964,25 @@ input:focus-visible {
   height: 34rem;
 }
 
+.action-map-canvas-rich .react-flow__node:not(.dragging) {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-map-canvas-rich .react-flow__edge-path {
+  transition: d 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes action-node-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .action-node {
   position: relative;
   display: flex;
@@ -2972,10 +2991,16 @@ input:focus-visible {
   border-radius: 0.9rem;
   font-weight: 800;
   cursor: grab;
+  animation: action-node-pop 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .action-node:active {
   cursor: grabbing;
+}
+
+.action-node-hub,
+.action-node-category {
+  box-shadow: 0 0.4rem 1rem rgba(11, 36, 57, 0.08);
 }
 
 .action-node-hub {
@@ -3039,13 +3064,22 @@ input:focus-visible {
   word-break: break-word;
 }
 
+.action-node-item-icon {
+  flex-shrink: 0;
+  color: var(--node-color, #3457d5);
+}
+
 .action-node-item.editing {
-  padding: 0.2rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  padding: 0.4rem;
   cursor: text;
+  max-width: 11rem;
 }
 
 .action-node-item.editing input {
-  width: 8rem;
+  width: 100%;
   border: 0;
   background: transparent;
   font: inherit;
@@ -3056,6 +3090,34 @@ input:focus-visible {
 
 .action-node-item.editing input:focus {
   outline: none;
+}
+
+.action-type-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(11, 36, 57, 0.08);
+}
+
+.action-type-picker button {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.4rem;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: #9aa7b0;
+}
+
+.action-type-picker button.active {
+  background: var(--node-color, #3457d5);
+  color: #fff;
+}
+
+.action-type-picker button:hover:not(.active) {
+  background: rgba(11, 36, 57, 0.06);
+  color: #26313a;
 }
 
 .action-node-remove {

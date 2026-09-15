@@ -26,6 +26,7 @@ create table if not exists public.action_map_items (
     'objetivos', 'publico_alvo', 'canais', 'recursos', 'acoes', 'resultados', 'riscos'
   )),
   title text not null,
+  item_type text,
   position integer not null default 0,
   position_x double precision,
   position_y double precision,

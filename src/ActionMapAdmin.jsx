@@ -15,7 +15,7 @@ export async function fetchActionMap(clientSupabaseId) {
 
   const [{ data: meta }, { data: items }] = await Promise.all([
     supabase.from("action_maps").select("title, subtitle, layout").eq("client_id", clientSupabaseId).maybeSingle(),
-    supabase.from("action_map_items").select("id, category, title, position, position_x, position_y").eq("client_id", clientSupabaseId).order("position", { ascending: true })
+    supabase.from("action_map_items").select("id, category, title, item_type, position, position_x, position_y").eq("client_id", clientSupabaseId).order("position", { ascending: true })
   ]);
 
   (items ?? []).forEach((item) => {
@@ -23,6 +23,7 @@ export async function fetchActionMap(clientSupabaseId) {
       itemsByCategory[item.category].push({
         id: item.id,
         title: item.title,
+        itemType: item.item_type,
         x: item.position_x,
         y: item.position_y
       });
@@ -49,19 +50,19 @@ async function saveActionMapLayout(clientSupabaseId, layout) {
 }
 
 async function addActionMapItem(clientSupabaseId, category, title, position, x, y) {
-  if (!supabase || !clientSupabaseId) return { id: `local-${Date.now()}`, title, x, y };
+  if (!supabase || !clientSupabaseId) return { id: `local-${Date.now()}`, title, itemType: null, x, y };
   const { data, error } = await supabase
     .from("action_map_items")
     .insert({ client_id: clientSupabaseId, category, title, position, position_x: x, position_y: y })
-    .select("id, title, position_x, position_y")
+    .select("id, title, item_type, position_x, position_y")
     .single();
   if (error) throw new Error(error.message);
-  return { id: data.id, title: data.title, x: data.position_x, y: data.position_y };
+  return { id: data.id, title: data.title, itemType: data.item_type, x: data.position_x, y: data.position_y };
 }
 
-async function renameActionMapItem(itemId, title) {
+async function renameActionMapItem(itemId, title, itemType) {
   if (!supabase || String(itemId).startsWith("local-")) return;
-  await supabase.from("action_map_items").update({ title }).eq("id", itemId);
+  await supabase.from("action_map_items").update({ title, item_type: itemType }).eq("id", itemId);
 }
 
 async function moveActionMapItem(itemId, x, y) {
@@ -119,11 +120,11 @@ export function ActionMapEditor({ clients }) {
     setAutoEditId(newItem.id);
   };
 
-  const handleRenameItem = (categoryKey, itemId, title) => {
-    renameActionMapItem(itemId, title);
+  const handleRenameItem = (categoryKey, itemId, title, itemType) => {
+    renameActionMapItem(itemId, title, itemType);
     setItemsByCategory((current) => ({
       ...current,
-      [categoryKey]: current[categoryKey].map((item) => (item.id === itemId ? { ...item, title } : item))
+      [categoryKey]: current[categoryKey].map((item) => (item.id === itemId ? { ...item, title, itemType } : item))
     }));
     setAutoEditId((current) => (current === itemId ? null : current));
   };
